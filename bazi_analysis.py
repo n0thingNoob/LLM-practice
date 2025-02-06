@@ -4,10 +4,6 @@ import json
 
 class BaziAnalyzer:
     SUPPORTED_MODELS = [
-        "deepseek-ai/DeepSeek-V2.5",  # 最新旗舰模型
-        "deepseek-ai/DeepSeek-V2",    # 上一代版本
-        "deepseek-chat",              # 通用对话模型
-        "deepseek-math",             # 数学专用模型
         "deepseek-ai/DeepSeek-R1"     # 推理模型
     ]
      
@@ -29,18 +25,18 @@ class BaziAnalyzer:
             {json.dumps(report, indent=2, ensure_ascii=False)}
 
             请按以下要求用中文回答：
-            1. 用比喻手法描述命局特点（不超过200字）
+            1. 用比喻手法描述命局特点（不超过150字）
             2. 五行平衡分析（含补救建议）
             3. 职业发展建议（结合现代行业）
             4. 健康注意事项
-            5. 使用✅表示优势，⚠️表示需要注意
-            6. 可以添加其他命理建议比如财运、婚姻等
+            5. 使用勾表示优势，叉表示需要注意
+            6. 添加其他命理建议比如财运、婚姻等
 
             要求：
             - 避免专业术语堆砌
             - 分点说明用🔹符号
             - 重要结论前添加表情符号"""
-                    }]
+            }]
 
     def analyze(self, report: dict, stream: bool = False) -> str:
         try:
@@ -75,3 +71,21 @@ class BaziAnalyzer:
                 yield chunk.choices[0].delta.content
                 full_content += chunk.choices[0].delta.content
         return full_content
+    
+    def analyze_with_history(self, messages: list, stream=False):
+        """支持历史记录的对话"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.5,
+                stream=stream
+            )
+            
+            if stream:
+                return (chunk.choices[0].delta.content for chunk in response)
+            else:
+                return response.choices[0].message.content
+                
+        except Exception as e:
+            return f"[API错误] {str(e)}"

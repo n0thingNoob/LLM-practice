@@ -50,11 +50,18 @@ class DateTimeEntry(ttk.Frame):
 class BaziApp:
     def __init__(self):
         self.window = tk.Tk()
-        self.window.title("AI 命理分析系统 - SiliconFlow 版")
+        self.window.title("AI 命理分析系统")
         self.window.geometry("1000x800")
         self._create_widgets()
         self.streaming = False
+        self.current_report = None
 
+    def _get_base_report(self) -> dict:
+        """获取当前命盘数据"""
+        if not self.current_report:
+            raise ValueError("请先进行排盘分析")
+        return self.current_report
+    
     def _create_widgets(self):
         # 控制面板
         control_frame = ttk.Frame(self.window)
@@ -106,6 +113,18 @@ class BaziApp:
         ttk.Button(btn_frame, text="排盘", command=self.generate_report).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="AI解析", command=self.analyze_report).pack(side="left", padx=5)
 
+        # 新增对话输入区
+        chat_frame = ttk.Frame(self.window)
+        chat_frame.pack(pady=10, fill="x")
+        
+        self.chat_entry = ttk.Entry(chat_frame, width=60)
+        self.chat_entry.pack(side="left", padx=5)
+        ttk.Button(chat_frame, text="提问", 
+                 command=self.ask_question).pack(side="left")
+        
+        # 初始化对话历史
+        self.conversation_history = []
+
         # 结果展示
         self.result_text = tk.Text(
             self.window,
@@ -124,11 +143,80 @@ class BaziApp:
             foreground="gray"
         ).pack(side="bottom", fill="x")
 
+    def ask_question(self):
+        """处理用户提问"""
+        question = self.chat_entry.get().strip()
+        if not question:
+            return
+        
+        try:
+            # 保存对话历史
+            self.conversation_history.append({"role": "user", "content": question})
+            
+            # 在子线程中处理
+            threading.Thread(
+                target=self._process_question,
+                args=(question,),
+                daemon=True
+            ).start()
+            
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def _process_question(self, question: str):
+        """处理问题并获取回答"""
+        try:
+            # 获取分析器实例
+            analyzer = BaziAnalyzer(
+                api_key=self.api_entry.get(),
+                model=self.model_var.get()
+            )
+            
+            # 构建包含历史记录的prompt
+            full_prompt = self._build_full_prompt()
+            
+            # 显示加载状态
+            self._update_display(f"\n\n[用户提问] {question}\n[AI正在思考...]")
+            
+            # 流式处理
+            if self.streaming:
+                response_stream = analyzer.analyze_with_history(
+                    full_prompt, 
+                    stream=True
+                )
+                for chunk in response_stream:
+                    self._update_display(chunk)
+            else:
+                response = analyzer.analyze_with_history(full_prompt)
+                self._update_display(f"\n{response}")
+                
+            # 保存到历史记录
+            self.conversation_history.append(
+                {"role": "assistant", "content": response}
+            )
+            
+        except Exception as e:
+            self._update_display(f"\n[错误] {str(e)}")
+
+    def _build_full_prompt(self) -> list:
+        """构建包含历史记录的完整prompt"""
+        base_report = self._get_base_report()  # 获取排盘数据
+        return [
+            {"role": "system", "content": f"八字排盘数据：{base_report}"}
+        ] + self.conversation_history
+
+    def _update_display(self, content: str):
+        """线程安全的显示更新"""
+        self.window.after(0, lambda: self.result_text.insert(tk.END, content))
+        self.window.after(0, lambda: self.result_text.see(tk.END))
+        
     def generate_report(self):
         try:
             birth_time = self.datetime_entry.get_datetime()
             calculator = BaziCalculator(birth_time)
             report = calculator.generate_report()
+
+            self.current_report = report
             
             self.result_text.delete(1.0, tk.END)
             self.result_text.insert(tk.END, "【命盘结构】\n")
@@ -141,6 +229,7 @@ class BaziApp:
                 self.result_text.insert(tk.END, f"{element}：{'★' * count}\n")
             
         except Exception as e:
+            self.current_report = None
             messagebox.showerror("错误", f"排盘失败：{str(e)}")
 
     def _toggle_stream(self):
