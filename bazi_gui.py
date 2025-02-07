@@ -165,38 +165,37 @@ class BaziApp:
 
     def _process_question(self, question: str):
         """处理问题并获取回答"""
+        response_content = ""  # 初始化响应内容
+        
         try:
-            # 获取分析器实例
             analyzer = BaziAnalyzer(
                 api_key=self.api_entry.get(),
                 model=self.model_var.get()
             )
-            
-            # 构建包含历史记录的prompt
             full_prompt = self._build_full_prompt()
             
-            # 显示加载状态
             self._update_display(f"\n\n[用户提问] {question}\n[AI正在思考...]")
             
-            # 流式处理
             if self.streaming:
-                response_stream = analyzer.analyze_with_history(
-                    full_prompt, 
-                    stream=True
-                )
+                response_stream = analyzer.analyze_with_history(full_prompt, stream=True)
                 for chunk in response_stream:
+                    response_content += chunk  # 累积响应内容
                     self._update_display(chunk)
             else:
-                response = analyzer.analyze_with_history(full_prompt)
-                self._update_display(f"\n{response}")
+                response_content = analyzer.analyze_with_history(full_prompt)  # 直接获取响应
+                self._update_display(f"\n{response_content}")
                 
-            # 保存到历史记录
+            # 保存完整响应到历史记录
             self.conversation_history.append(
-                {"role": "assistant", "content": response}
+                {"role": "assistant", "content": response_content}
             )
             
         except Exception as e:
-            self._update_display(f"\n[错误] {str(e)}")
+            error_msg = f"\n[错误] {str(e)}"
+            self._update_display(error_msg)
+            self.conversation_history.append(
+                {"role": "system", "content": error_msg}
+            )
 
     def _build_full_prompt(self) -> list:
         """构建包含历史记录的完整prompt"""
@@ -217,7 +216,7 @@ class BaziApp:
             report = calculator.generate_report()
 
             self.current_report = report
-            
+
             self.result_text.delete(1.0, tk.END)
             self.result_text.insert(tk.END, "【命盘结构】\n")
             self.result_text.insert(tk.END, f"年柱：{report['sizhu']['year']}\n")
